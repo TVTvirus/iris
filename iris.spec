@@ -10,7 +10,8 @@ Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 
 BuildArch:      noarch
 BuildRequires:  desktop-file-utils
-BuildRequires:  libappstream-glib
+# No compila nada, pero de aquí salen los macros de Python (%py_byte_compile).
+BuildRequires:  python3-devel
 
 Requires:       python3
 Requires:       python3-pyqt6
@@ -73,11 +74,19 @@ desktop-file-install \
     --dir=%{buildroot}%{_datadir}/applications \
     iris.desktop
 
+install -d %{buildroot}%{_metainfodir}
+install -pm 0644 iris.metainfo.xml %{buildroot}%{_metainfodir}/xyz.w4ve.iris.metainfo.xml
+
+# Los .pyc van con el macro y no con compileall a mano, o quedan con la ruta
+# del constructor metida dentro y los errores señalarían a un sitio que no
+# existe en la máquina de nadie.
+%py_byte_compile %{__python3} %{buildroot}%{_datadir}/%{name}
+
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
-# Que los módulos al menos compilen, que es lo mínimo que se puede exigir
-# sin una cámara ni un servidor gráfico dentro del constructor.
-%{__python3} -m compileall -q %{buildroot}%{_datadir}/%{name}
+# Que los módulos al menos compilen, que es lo mínimo que se puede exigir sin
+# una cámara ni un servidor gráfico dentro del constructor.
+%{__python3} -m compileall -q *.py
 
 %files
 %license LICENSE
@@ -86,6 +95,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
 %{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+%{_metainfodir}/xyz.w4ve.iris.metainfo.xml
 
 %changelog
 * Fri Aug 28 2026 TVTvirus <86693814+TVTvirus@users.noreply.github.com> - 1.0.0-1

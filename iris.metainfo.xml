@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>xyz.w4ve.iris</id>
+  <launchable type="desktop-id">iris.desktop</launchable>
+
+  <name>Iris</name>
+  <name xml:lang="es">Iris</name>
+  <summary>Take photos and record video with your webcam</summary>
+  <summary xml:lang="es">Sacate fotos y grabá vídeo con la webcam</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      A camera app that doesn't lie about what your webcam can do. It talks to
+      V4L2 directly, without OpenCV or GStreamer: frames arrive as raw JPEG and
+      Qt decodes them on its own, so photos are saved without recompressing and
+      the image never goes through a colour conversion that washes it out.
+    </p>
+    <p>
+      It always asks the camera for MJPG, because uncompressed video on a USB
+      2.0 webcam means 5 frames per second at 1080p. The status bar shows the
+      frame rate you are actually getting, not the one the camera claims.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Photos saved as the exact JPEG the camera sends, with no recompression</li>
+      <li>Video in H.264 with audio, choosing which microphone to use</li>
+      <li>Mirror and rotation, remembered between sessions</li>
+      <li>Several cameras detected and listed by name</li>
+      <li>An advanced panel with the camera's own brightness, contrast, saturation, gain and exposure</li>
+      <li>It tells you which program is holding the camera, and opens as soon as it is released</li>
+    </ul>
+
+    <p xml:lang="es">
+      Una cámara que no te miente sobre lo que puede dar tu webcam. Le habla a
+      V4L2 directamente, sin OpenCV ni GStreamer: los cuadros llegan como JPEG
+      crudo y Qt los decodifica solo, así que las fotos se guardan sin
+      recomprimir y la imagen no pasa por una conversión de color que la lave.
+    </p>
+    <p xml:lang="es">
+      Siempre le pide MJPG a la cámara, porque el vídeo sin comprimir en una
+      webcam USB 2.0 son 5 fotogramas por segundo a 1080p. La barra de estado
+      muestra los fotogramas que estás recibiendo de verdad, no los que la
+      cámara promete.
+    </p>
+    <p xml:lang="es">Lo que hace:</p>
+    <ul xml:lang="es">
+      <li>Las fotos se guardan como el JPEG exacto que manda la cámara, sin recomprimir</li>
+      <li>Vídeo en H.264 con audio, eligiendo qué micrófono usar</li>
+      <li>Espejo y giro, que se acuerdan de cómo los dejaste</li>
+      <li>Detecta varias cámaras y las lista por su nombre</li>
+      <li>Un panel avanzado con el brillo, contraste, saturación, ganancia y exposición propios de la cámara</li>
+      <li>Te dice qué programa tiene tomada la cámara, y se abre en cuanto la suelten</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+  </categories>
+
+  <keywords>
+    <keyword>camera</keyword>
+    <keyword>webcam</keyword>
+    <keyword>photo</keyword>
+    <keyword>video</keyword>
+    <keyword translate="no">v4l2</keyword>
+  </keywords>
+  <keywords xml:lang="es">
+    <keyword>cámara</keyword>
+    <keyword>webcam</keyword>
+    <keyword>foto</keyword>
+    <keyword>vídeo</keyword>
+  </keywords>
+
+  <url type="homepage">https://github.com/TVTvirus/iris</url>
+  <url type="bugtracker">https://github.com/TVTvirus/iris/issues</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The shutter button is an eye that blinks when it takes the picture</caption>
+      <caption xml:lang="es">El disparador es un ojo que parpadea al sacar la foto</caption>
+      <image>https://raw.githubusercontent.com/TVTvirus/iris/master/docs/ojo.png</image>
+    </screenshot>
+  </screenshots>
+
+  <provides>
+    <binary>iris</binary>
+  </provides>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.0.0" date="2026-08-28">
+      <description>
+        <p>First release.</p>
+        <p xml:lang="es">Primera versión.</p>
+      </description>
+    </release>
+  </releases>
+</component>
