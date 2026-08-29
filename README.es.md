@@ -68,6 +68,9 @@ que la cámara promete.
 - **Una sola ventana**: una webcam admite un solo programa a la vez, así que
   abrirla dos veces levanta la que ya está en lugar de dejarte una ventana
   negra inútil.
+- **Varias cámaras**: las detecta y las lista por su nombre. Una webcam suele
+  exponer varios `/dev/videoN` y la mayoría son de metadatos, no de imagen;
+  solo se ofrecen las que de verdad capturan MJPG.
 
 Atajos: `Espacio` dispara, `R` gira, `Ctrl+O` abre la carpeta.
 
@@ -91,6 +94,12 @@ webcam en MJPG. Qt sabe decodificar eso solo, así que:
 
 La latencia se controla vaciando la cola de cuadros en cada lectura y usando el
 más nuevo. Es la diferencia entre verte en vivo y verte tarde.
+
+Los números de `ioctl` no están escritos a mano: se calculan con la misma
+fórmula que usa el kernel, a partir del tamaño real de cada estructura. Por eso
+las estructuras llevan uniones de verdad en vez de relleno a ojo: así ctypes
+calcula la alineación sola y los números salen bien tanto en 64 bits como en 32
+o en ARM, donde un puntero mide distinto y las estructuras cambian de tamaño.
 
 ## Requisitos
 
@@ -118,11 +127,7 @@ terminal. Para sacarlo, `./instalar.sh --quitar`.
 
 Funciona y se usa a diario. Lo que falta:
 
-- El dispositivo está fijo en `/dev/video0`: falta detectar varias cámaras y
-  dejar elegir.
-- Los números de `ioctl` están calculados para 64 bits. En 32 bits o ARM las
-  estructuras del kernel miden distinto y habría que calcularlos en tiempo de
-  ejecución.
+- Nunca se probó fuera de Linux x86-64 con una webcam UVC.
 - El código y los comentarios están en español; solo la interfaz es bilingüe.
 
 ## Licencia

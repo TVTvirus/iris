@@ -13,7 +13,8 @@ from PyQt6.QtCore import QLocale
 
 TEXTOS = {
     "es": {
-        "calidad_carpetas": "Calidad y carpetas",
+        "calidad_carpetas": "Cámara, calidad y carpetas",
+        "camara_elegida": "Cambiando a: {nombre}",
         "girar": "Girar la imagen un cuarto de vuelta",
         "espejo": (
             "Espejo: verte con los lados cambiados.\n"
@@ -77,7 +78,8 @@ TEXTOS = {
         "ajustes_app": "Ajustes del programa",
     },
     "en": {
-        "calidad_carpetas": "Quality and folders",
+        "calidad_carpetas": "Camera, quality and folders",
+        "camara_elegida": "Switching to: {nombre}",
         "girar": "Rotate the image a quarter turn",
         "espejo": (
             "Mirror: see yourself with the sides swapped.\n"

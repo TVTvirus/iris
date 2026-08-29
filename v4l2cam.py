@@ -5,33 +5,51 @@ crudo, tal cual sale de la camara. Qt sabe decodificar eso solo, asi que no
 hace falta OpenCV ni GStreamer, y la foto se puede guardar sin recomprimir.
 
 Por que MJPG y no crudo: una webcam USB 2.0 no tiene ancho de banda para
-video sin comprimir. La REDRAGON de esta maquina da 5 fps en YUYV a 1080p
-y 30 declarados (15 reales) en MJPG a cualquier resolucion.
+video sin comprimir. Una camara tipica da 5 fps en YUYV a 1080p y 30
+declarados (15 reales) en MJPG a cualquier resolucion.
+
+Los numeros de ioctl NO estan escritos a mano: se calculan con la misma
+formula que usa el kernel, a partir del tamaño real de cada estructura. Por
+eso las estructuras llevan uniones de verdad en vez de relleno a ojo: asi
+ctypes calcula la alineacion sola y los numeros salen bien tanto en 64 bits
+como en 32 o en ARM, donde un puntero mide distinto y las estructuras
+cambian de tamaño.
 """
 
 import ctypes
 import fcntl
+import glob
 import mmap
 import os
 import select
 
-# ---------------------------------------------------------------- ioctls
-# Los numeros salen de _IOWR('V', nr, struct): direccion<<30 | tam<<16 | 'V'<<8 | nr
-VIDIOC_S_FMT = 0xC0D05605
-VIDIOC_REQBUFS = 0xC0145608
-VIDIOC_QUERYBUF = 0xC0585609
-VIDIOC_QBUF = 0xC058560F
-VIDIOC_DQBUF = 0xC0585611
-VIDIOC_STREAMON = 0x40045612
-VIDIOC_STREAMOFF = 0x40045613
-VIDIOC_ENUM_FRAMESIZES = 0xC02C564A
-VIDIOC_ENUM_FRAMEINTERVALS = 0xC034564B
-VIDIOC_G_CTRL = 0xC008561B
-VIDIOC_S_CTRL = 0xC008561C
+# ------------------------------------------------------- numeros de ioctl
+# _IOC(direccion, tipo, numero, tamaño), tal cual asm-generic/ioctl.h
+_NINGUNA, _ESCRIBIR, _LEER = 0, 1, 2
+
+
+def _IOC(direccion, tipo, numero, tamano):
+    return (direccion << 30) | (tamano << 16) | (ord(tipo) << 8) | numero
+
+
+def _IOR(tipo, numero, estructura):
+    return _IOC(_LEER, tipo, numero, ctypes.sizeof(estructura))
+
+
+def _IOW(tipo, numero, estructura):
+    return _IOC(_ESCRIBIR, tipo, numero, ctypes.sizeof(estructura))
+
+
+def _IOWR(tipo, numero, estructura):
+    return _IOC(_LEER | _ESCRIBIR, tipo, numero, ctypes.sizeof(estructura))
+
 
 BUF_TYPE_VIDEO_CAPTURE = 1
 MEMORY_MMAP = 1
 FRMIVAL_TYPE_DISCRETE = 1
+FRMSIZE_TYPE_DISCRETE = 1
+CAP_VIDEO_CAPTURE = 0x00000001
+CAP_DEVICE_CAPS = 0x80000000
 
 CONTROLES = {
     "brillo": 0x00980900,
@@ -44,98 +62,157 @@ CONTROLES = {
 }
 
 
-def fourcc(s):
-    return sum(ord(c) << (8 * i) for i, c in enumerate(s))
+def fourcc(texto):
+    return sum(ord(c) << (8 * i) for i, c in enumerate(texto))
 
 
 MJPG = fourcc("MJPG")
 
+u8, u32, i32 = ctypes.c_uint8, ctypes.c_uint32, ctypes.c_int32
+
 
 # --------------------------------------------------------------- structs
+class Capacidad(ctypes.Structure):
+    _fields_ = [
+        ("driver", u8 * 16),
+        ("card", u8 * 32),
+        ("bus_info", u8 * 32),
+        ("version", u32),
+        ("capabilities", u32),
+        ("device_caps", u32),
+        ("_reservado", u32 * 3),
+    ]
+
+
 class Fract(ctypes.Structure):
-    _fields_ = [("num", ctypes.c_uint32), ("den", ctypes.c_uint32)]
+    _fields_ = [("num", u32), ("den", u32)]
+
+
+class PixFormat(ctypes.Structure):
+    _fields_ = [
+        ("width", u32),
+        ("height", u32),
+        ("pixelformat", u32),
+        ("field", u32),
+        ("bytesperline", u32),
+        ("sizeimage", u32),
+        ("colorspace", u32),
+        ("priv", u32),
+        ("flags", u32),
+        ("enc", u32),
+        ("quantization", u32),
+        ("xfer_func", u32),
+    ]
+
+
+class _Ventana(ctypes.Structure):
+    """v4l2_window. No la usamos: esta para que la union se alinee bien.
+
+    Es la unica rama del union que contiene punteros, y por eso el union
+    entero se alinea a 8 en 64 bits. Sin ella, el tamaño de v4l2_format
+    saldria 204 en vez de 208 y el numero del ioctl seria otro.
+    """
+
+    _fields_ = [
+        ("rect", u32 * 4),
+        ("field", u32),
+        ("chromakey", u32),
+        ("clips", ctypes.c_void_p),
+        ("clipcount", u32),
+        ("bitmap", ctypes.c_void_p),
+        ("global_alpha", u8),
+    ]
+
+
+class _UnionFormato(ctypes.Union):
+    _fields_ = [("pix", PixFormat), ("win", _Ventana), ("crudo", u8 * 200)]
 
 
 class Formato(ctypes.Structure):
-    # v4l2_format: el union arranca en el byte 8 porque contiene un puntero
-    # (v4l2_window), que en 64 bits obliga a alineacion de 8.
-    _fields_ = [
-        ("type", ctypes.c_uint32),
-        ("_relleno", ctypes.c_uint32),
-        ("width", ctypes.c_uint32),
-        ("height", ctypes.c_uint32),
-        ("pixelformat", ctypes.c_uint32),
-        ("field", ctypes.c_uint32),
-        ("bytesperline", ctypes.c_uint32),
-        ("sizeimage", ctypes.c_uint32),
-        ("colorspace", ctypes.c_uint32),
-        ("priv", ctypes.c_uint32),
-        ("flags", ctypes.c_uint32),
-        ("enc", ctypes.c_uint32),
-        ("quantization", ctypes.c_uint32),
-        ("xfer_func", ctypes.c_uint32),
-        ("_resto", ctypes.c_uint8 * 152),
-    ]
+    _fields_ = [("type", u32), ("fmt", _UnionFormato)]
 
 
 class PedidoBuffers(ctypes.Structure):
     _fields_ = [
-        ("count", ctypes.c_uint32),
-        ("type", ctypes.c_uint32),
-        ("memory", ctypes.c_uint32),
-        ("capabilities", ctypes.c_uint32),
-        ("flags", ctypes.c_uint8),
-        ("_reservado", ctypes.c_uint8 * 3),
+        ("count", u32),
+        ("type", u32),
+        ("memory", u32),
+        ("capabilities", u32),
+        ("flags", u8),
+        ("_reservado", u8 * 3),
+    ]
+
+
+class Temporizador(ctypes.Structure):
+    _fields_ = [("tv_sec", ctypes.c_long), ("tv_usec", ctypes.c_long)]
+
+
+class _UnionBuffer(ctypes.Union):
+    _fields_ = [
+        ("offset", u32),
+        ("userptr", ctypes.c_ulong),
+        ("planes", ctypes.c_void_p),
+        ("fd", i32),
     ]
 
 
 class Buffer(ctypes.Structure):
     _fields_ = [
-        ("index", ctypes.c_uint32),
-        ("type", ctypes.c_uint32),
-        ("bytesused", ctypes.c_uint32),
-        ("flags", ctypes.c_uint32),
-        ("field", ctypes.c_uint32),
-        ("_pad", ctypes.c_uint32),
-        ("tv_sec", ctypes.c_int64),
-        ("tv_usec", ctypes.c_int64),
-        ("timecode", ctypes.c_uint8 * 16),
-        ("sequence", ctypes.c_uint32),
-        ("memory", ctypes.c_uint32),
-        ("offset", ctypes.c_uint32),
-        ("_offset_alto", ctypes.c_uint32),
-        ("length", ctypes.c_uint32),
-        ("reserved2", ctypes.c_uint32),
-        ("request_fd", ctypes.c_int32),
-        ("_cola", ctypes.c_uint32),
+        ("index", u32),
+        ("type", u32),
+        ("bytesused", u32),
+        ("flags", u32),
+        ("field", u32),
+        ("timestamp", Temporizador),
+        ("timecode", u8 * 16),
+        ("sequence", u32),
+        ("memory", u32),
+        ("m", _UnionBuffer),
+        ("length", u32),
+        ("reserved2", u32),
+        ("request_fd", i32),
     ]
 
 
 class TamanoCuadro(ctypes.Structure):
     _fields_ = [
-        ("index", ctypes.c_uint32),
-        ("pixel_format", ctypes.c_uint32),
-        ("type", ctypes.c_uint32),
-        ("width", ctypes.c_uint32),
-        ("height", ctypes.c_uint32),
-        ("_resto", ctypes.c_uint32 * 6),
+        ("index", u32),
+        ("pixel_format", u32),
+        ("type", u32),
+        ("width", u32),
+        ("height", u32),
+        ("_resto", u32 * 6),
     ]
 
 
 class IntervaloCuadro(ctypes.Structure):
     _fields_ = [
-        ("index", ctypes.c_uint32),
-        ("pixel_format", ctypes.c_uint32),
-        ("width", ctypes.c_uint32),
-        ("height", ctypes.c_uint32),
-        ("type", ctypes.c_uint32),
+        ("index", u32),
+        ("pixel_format", u32),
+        ("width", u32),
+        ("height", u32),
+        ("type", u32),
         ("discrete", Fract),
-        ("_resto", ctypes.c_uint32 * 6),
+        ("_resto", u32 * 6),
     ]
 
 
 class Control(ctypes.Structure):
-    _fields_ = [("id", ctypes.c_uint32), ("value", ctypes.c_int32)]
+    _fields_ = [("id", u32), ("value", i32)]
+
+
+VIDIOC_QUERYCAP = _IOR("V", 0, Capacidad)
+VIDIOC_S_FMT = _IOWR("V", 5, Formato)
+VIDIOC_REQBUFS = _IOWR("V", 8, PedidoBuffers)
+VIDIOC_QUERYBUF = _IOWR("V", 9, Buffer)
+VIDIOC_QBUF = _IOWR("V", 15, Buffer)
+VIDIOC_DQBUF = _IOWR("V", 17, Buffer)
+VIDIOC_STREAMON = _IOW("V", 18, i32)
+VIDIOC_STREAMOFF = _IOW("V", 19, i32)
+VIDIOC_G_CTRL = _IOWR("V", 27, Control)
+VIDIOC_S_CTRL = _IOWR("V", 28, Control)
+VIDIOC_ENUM_FRAMESIZES = _IOWR("V", 74, TamanoCuadro)
+VIDIOC_ENUM_FRAMEINTERVALS = _IOWR("V", 75, IntervaloCuadro)
 
 
 # ----------------------------------------------------------------- error
@@ -148,6 +225,64 @@ class CamaraNoSirve(Exception):
 
 
 # ----------------------------------------------------------------- api
+def _texto(campo):
+    return bytes(campo).split(b"\0")[0].decode(errors="replace").strip()
+
+
+def _nombre_limpio(card):
+    """El nombre que da el kernel, sin la coletilla truncada.
+
+    El campo `card` mide 32 bytes y los drivers UVC suelen meter ahi el
+    nombre dos veces separado por dos puntos, con el segundo cortado a la
+    mitad: "REDRAGON Live Camera:  REDRAGO". Nos quedamos con el primero.
+    """
+    nombre = _texto(card)
+    return nombre.split(":")[0].strip() or nombre
+
+
+def camaras():
+    """[(ruta, nombre)] de las camaras que sirven, ordenadas por ruta.
+
+    Una sola webcam suele exponer varios /dev/videoN: los de mas suelen ser
+    nodos de metadatos, no de imagen. Se queda solo con los que dicen saber
+    capturar video Y ofrecen algun tamaño en MJPG, que es lo unico que esta
+    app sabe pedir.
+    """
+    encontradas = []
+    for ruta in sorted(glob.glob("/dev/video*")):
+        try:
+            fd = os.open(ruta, os.O_RDWR | os.O_NONBLOCK)
+        except OSError:
+            continue  # ocupada o sin permiso: no es asunto nuestro ahora
+        try:
+            cap = Capacidad()
+            fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
+            puede = cap.device_caps if cap.capabilities & CAP_DEVICE_CAPS else cap.capabilities
+            if not puede & CAP_VIDEO_CAPTURE:
+                continue
+            tamano = TamanoCuadro(index=0, pixel_format=MJPG)
+            fcntl.ioctl(fd, VIDIOC_ENUM_FRAMESIZES, tamano)
+            encontradas.append((ruta, _nombre_limpio(cap.card) or ruta))
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+    return encontradas
+
+
+def primera_camara():
+    """La ruta de la primera camara util, o /dev/video0 si no hay ninguna."""
+    halladas = camaras()
+    return halladas[0][0] if halladas else "/dev/video0"
+
+
+def nombre_de(ruta):
+    for camino, nombre in camaras():
+        if camino == ruta:
+            return nombre
+    return ruta
+
+
 def modos(dispositivo="/dev/video0"):
     """Los modos MJPG del aparato, del mas grande al mas chico.
 
@@ -166,7 +301,7 @@ def modos(dispositivo="/dev/video0"):
                 fcntl.ioctl(fd, VIDIOC_ENUM_FRAMESIZES, t)
             except OSError:
                 break
-            if t.type != 1:  # solo tamanos discretos
+            if t.type != FRMSIZE_TYPE_DISCRETE:
                 continue
             salida.append((t.width, t.height, _mejor_fps(fd, t.width, t.height)))
         salida.sort(key=lambda m: m[0] * m[1], reverse=True)
@@ -197,16 +332,17 @@ _APODOS = (
     ("webcamoid", "Webcamoid"),
     ("snapshot", "Snapshot"),
     ("obs", "OBS"),
-    ("ffplay", "el Espejo"),
+    ("ffplay", "ffplay"),
     ("cheese", "Cheese"),
     ("firefox", "Firefox"),
     ("chrome", "Chrome"),
     ("chromium", "Chromium"),
     ("zoom", "Zoom"),
+    ("teams", "Teams"),
 )
 
 
-def quien_la_tiene():
+def quien_la_tiene(dispositivo=None):
     """El nombre del programa que tiene la camara abierta, o None.
 
     Sirve para dar un mensaje util en vez de un 'dispositivo ocupado' pelado.
@@ -222,7 +358,10 @@ def quien_la_tiene():
             continue
         for fd in fds:
             try:
-                if not os.readlink(f"/proc/{pid}/fd/{fd}").startswith("/dev/video"):
+                destino = os.readlink(f"/proc/{pid}/fd/{fd}")
+                if not destino.startswith("/dev/video"):
+                    continue
+                if dispositivo and destino != dispositivo:
                     continue
                 with open(f"/proc/{pid}/cmdline", "rb") as f:
                     linea = f.read().replace(b"\0", b" ").decode(errors="replace")
@@ -230,9 +369,12 @@ def quien_la_tiene():
                 continue
             for pista, apodo in _APODOS:
                 if pista.lower() in linea.lower():
-                    return apodo, pista == "camara.py"
-            with open(f"/proc/{pid}/comm") as f:
-                return f.read().strip(), False
+                    return apodo, pista == "iris.py"
+            try:
+                with open(f"/proc/{pid}/comm") as f:
+                    return f.read().strip(), False
+            except OSError:
+                continue
     return None, False
 
 
@@ -248,32 +390,34 @@ class Camara:
         self._transmitiendo = False
         self._buffers = buffers
 
+    def _ocupada(self, error):
+        quien, _ = quien_la_tiene(self.dispositivo)
+        return CamaraOcupada(quien or "otro programa")
+
     def abrir(self):
         try:
             self._fd = os.open(self.dispositivo, os.O_RDWR | os.O_NONBLOCK)
         except OSError as e:
             if e.errno in (16, 11):  # EBUSY, EAGAIN
-                raise CamaraOcupada(quien_la_tiene()[0] or "otro programa") from e
+                raise self._ocupada(e) from e
             raise CamaraNoSirve(str(e)) from e
 
-        fmt = Formato(
-            type=BUF_TYPE_VIDEO_CAPTURE,
-            width=self.ancho,
-            height=self.alto,
-            pixelformat=MJPG,
-            field=1,  # NONE
-        )
+        fmt = Formato(type=BUF_TYPE_VIDEO_CAPTURE)
+        fmt.fmt.pix.width = self.ancho
+        fmt.fmt.pix.height = self.alto
+        fmt.fmt.pix.pixelformat = MJPG
+        fmt.fmt.pix.field = 1  # NONE
         try:
             fcntl.ioctl(self._fd, VIDIOC_S_FMT, fmt)
         except OSError as e:
             self.cerrar()
             if e.errno == 16:
-                raise CamaraOcupada(quien_la_tiene()[0] or "otro programa") from e
+                raise self._ocupada(e) from e
             raise CamaraNoSirve(f"no acepta MJPG: {e}") from e
 
         # El driver puede corregir lo pedido: nos quedamos con lo que dio.
-        self.ancho, self.alto = fmt.width, fmt.height
-        if fmt.pixelformat != MJPG:
+        self.ancho, self.alto = fmt.fmt.pix.width, fmt.fmt.pix.height
+        if fmt.fmt.pix.pixelformat != MJPG:
             self.cerrar()
             raise CamaraNoSirve("la camara no da MJPG")
 
@@ -284,7 +428,7 @@ class Camara:
             fcntl.ioctl(self._fd, VIDIOC_REQBUFS, pedido)
         except OSError as e:
             self.cerrar()
-            raise CamaraOcupada(quien_la_tiene()[0] or "otro programa") from e
+            raise self._ocupada(e) from e
 
         for i in range(pedido.count):
             buf = Buffer(index=i, type=BUF_TYPE_VIDEO_CAPTURE, memory=MEMORY_MMAP)
@@ -295,12 +439,12 @@ class Camara:
                     buf.length,
                     flags=mmap.MAP_SHARED,
                     prot=mmap.PROT_READ,
-                    offset=buf.offset,
+                    offset=buf.m.offset,
                 )
             )
             fcntl.ioctl(self._fd, VIDIOC_QBUF, buf)
 
-        tipo = ctypes.c_uint32(BUF_TYPE_VIDEO_CAPTURE)
+        tipo = ctypes.c_int32(BUF_TYPE_VIDEO_CAPTURE)
         fcntl.ioctl(self._fd, VIDIOC_STREAMON, tipo)
         self._transmitiendo = True
         return self
@@ -346,7 +490,7 @@ class Camara:
     def cerrar(self):
         if self._transmitiendo:
             try:
-                tipo = ctypes.c_uint32(BUF_TYPE_VIDEO_CAPTURE)
+                tipo = ctypes.c_int32(BUF_TYPE_VIDEO_CAPTURE)
                 fcntl.ioctl(self._fd, VIDIOC_STREAMOFF, tipo)
             except OSError:
                 pass
@@ -369,20 +513,27 @@ if __name__ == "__main__":
     import sys
     import time
 
-    dev = sys.argv[1] if len(sys.argv) > 1 else "/dev/video0"
-    print(f"modos MJPG de {dev}:")
+    halladas = camaras()
+    print(f"camaras encontradas: {len(halladas)}")
+    for ruta, nombre in halladas:
+        print(f"  {ruta}  {nombre}")
+
+    dev = sys.argv[1] if len(sys.argv) > 1 else primera_camara()
+    print(f"\nmodos MJPG de {dev}:")
     for a, al, f in modos(dev):
         print(f"  {a}x{al} @ {f} fps")
 
-    print("\nmidiendo 3 segundos a 1280x720...")
+    print("\nmidiendo 5 segundos a 1280x720...")
     with Camara(dev) as cam:
+        cam.cuadro()  # el primero se lleva el arranque del sensor
         n, pesos, arranque = 0, 0, time.monotonic()
-        while time.monotonic() - arranque < 3:
+        while time.monotonic() - arranque < 5:
             c = cam.cuadro()
             if c:
                 n += 1
                 pesos += len(c)
         seg = time.monotonic() - arranque
-        print(f"  {n} cuadros en {seg:.1f}s = {n / seg:.1f} fps")
-        print(f"  {pesos / n / 1024:.0f} KB por cuadro" if n else "  sin cuadros")
+        print(f"  {n} cuadros en {seg:.1f}s = {n / seg:.1f} fps reales")
+        if n:
+            print(f"  {pesos / n / 1024:.0f} KB por cuadro")
         print(f"  brillo={cam.control('brillo')} ganancia={cam.control('ganancia')}")

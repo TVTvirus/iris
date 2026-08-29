@@ -70,7 +70,6 @@ from avanzado import Avanzado
 from idiomas import T
 import idiomas
 
-DISPOSITIVO = "/dev/video0"
 NOMBRE_SOCKET = "w4ve-iris"
 FPS_POR_DEFECTO = 15
 
@@ -87,17 +86,18 @@ class Capturador(QThread):
     cuadro = pyqtSignal(bytes)
     fallo = pyqtSignal(str, bool)
 
-    def __init__(self, ancho, alto):
+    def __init__(self, dispositivo, ancho, alto):
         super().__init__()
+        self.dispositivo = dispositivo
         self.ancho, self.alto = ancho, alto
         self.camara = None  # la usa el panel avanzado para tocar controles
         self._seguir = True
 
     def run(self):
         try:
-            cam = v4l2cam.Camara(DISPOSITIVO, self.ancho, self.alto).abrir()
+            cam = v4l2cam.Camara(self.dispositivo, self.ancho, self.alto).abrir()
         except v4l2cam.CamaraOcupada as e:
-            _, nuestro = v4l2cam.quien_la_tiene()
+            _, nuestro = v4l2cam.quien_la_tiene(self.dispositivo)
             self.fallo.emit(T("ocupada", quien=e), nuestro)
             return
         except v4l2cam.CamaraNoSirve as e:
@@ -466,6 +466,7 @@ class Ventana(QMainWindow):
         self.cuenta = 0
         self.fps_real = FPS_POR_DEFECTO
         self.modos_camara = []
+        self.camaras = v4l2cam.camaras()
         self.modo_video = self.ajustes.value("modo_video", False, type=bool)
 
         self.visor = Visor()
@@ -603,13 +604,22 @@ class Ventana(QMainWindow):
         return self.grabador is not None
 
     @property
+    def dispositivo(self):
+        """La cámara elegida, o la primera que sirva si esa ya no está."""
+        guardada = self.ajustes.value("dispositivo", "", type=str)
+        rutas = [ruta for ruta, _ in self.camaras]
+        if guardada in rutas:
+            return guardada
+        return rutas[0] if rutas else "/dev/video0"
+
+    @property
     def resolucion(self):
         return self.ajustes.value("resolucion", "1280x720", type=str)
 
     # ------------------------------------------------------------ camara
     def _cargar_modos(self):
         try:
-            self.modos_camara = v4l2cam.modos(DISPOSITIVO)
+            self.modos_camara = v4l2cam.modos(self.dispositivo)
         except v4l2cam.CamaraNoSirve as e:
             self.decir(T("sin_camara", error=e))
             return
@@ -620,6 +630,19 @@ class Ventana(QMainWindow):
 
     def _menu_mas(self):
         menu = QMenu(self)
+        # Elegir cámara solo tiene sentido si hay más de una, así que con
+        # una sola ni aparece.
+        if len(self.camaras) > 1:
+            grupo_camaras = QActionGroup(menu)
+            for ruta, nombre in self.camaras:
+                accion = QAction(nombre, menu, checkable=True)
+                accion.setChecked(ruta == self.dispositivo)
+                accion.setEnabled(not self.grabando)
+                accion.setToolTip(ruta)
+                accion.triggered.connect(lambda _, r=ruta: self._cambiar_camara(r))
+                grupo_camaras.addAction(accion)
+                menu.addAction(accion)
+            menu.addSeparator()
         grupo = QActionGroup(menu)
         for ancho, alto, _fps in self.modos_camara:
             texto = f"{ancho}x{alto}"
@@ -645,7 +668,7 @@ class Ventana(QMainWindow):
     def _arrancar(self):
         self._parar()
         ancho, alto = (int(v) for v in self.resolucion.split("x"))
-        self.hilo = Capturador(ancho, alto)
+        self.hilo = Capturador(self.dispositivo, ancho, alto)
         self.hilo.cuadro.connect(self._recibir)
         self.hilo.fallo.connect(self._fallo)
         self.hilo.start()
@@ -768,6 +791,14 @@ class Ventana(QMainWindow):
             if self.visor.giro
             else T("derecha")
         )
+
+    def _cambiar_camara(self, ruta):
+        """Otra cámara: cambian sus modos, así que se rehace la lista."""
+        self.ajustes.setValue("dispositivo", ruta)
+        self.disparador.setEnabled(False)
+        self.resoluciones.clear()
+        self.decir(T("camara_elegida", nombre=v4l2cam.nombre_de(ruta)))
+        self._cargar_modos()
 
     def _cambiar_resolucion(self, texto):
         self.ajustes.setValue("resolucion", texto)

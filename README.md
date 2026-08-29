@@ -65,6 +65,9 @@ the camera promises.
 - **A single window**: a webcam only accepts one program at a time, so opening
   it twice raises the existing window instead of leaving you a useless black
   one.
+- **Several cameras**: they get detected and listed by name. One webcam usually
+  exposes several `/dev/videoN` nodes and most of them are metadata, not image;
+  only the ones that can actually capture MJPG are offered.
 - **Advanced panel** (`Ctrl+Shift+A`): brightness, contrast, saturation, gain
   and exposure straight from the camera's own controls, plus quality and
   language. Deliberately tucked away. Controls your camera doesn't support show
@@ -95,6 +98,13 @@ Latency is kept down by draining the frame queue on every read and using the
 newest one. That is the difference between seeing yourself live and seeing
 yourself late.
 
+The `ioctl` numbers are not hardcoded: they are computed with the same formula
+the kernel uses, from the actual size of each structure. That is why the
+structures carry real unions instead of hand-measured padding, so ctypes works
+out the alignment by itself and the numbers come out right on 64-bit as well as
+on 32-bit or ARM, where a pointer is a different size and the structures change
+accordingly.
+
 ## Requirements
 
 - Python 3 with **PyQt6**
@@ -121,10 +131,7 @@ terminal. To remove it, `./instalar.sh --quitar`.
 
 It works and gets daily use. What's missing:
 
-- The device is hardcoded to `/dev/video0`: multiple cameras still need
-  detecting and choosing.
-- The `ioctl` numbers are computed for 64-bit. On 32-bit or ARM the kernel
-  structures are sized differently and they would need computing at runtime.
+- Never tested on anything other than x86-64 Linux with a UVC webcam.
 - The code and comments are in Spanish; only the interface is bilingual.
 
 ## Licence
