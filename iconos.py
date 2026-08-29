@@ -144,7 +144,21 @@ def icono_app(lados=(16, 24, 32, 48, 64, 128, 256)):
     Lleva su propio fondo redondeado oscuro para que se lea igual de bien
     sobre una barra de titulo clara que sobre una oscura.
     """
+    import os
+
     from PyQt6.QtGui import QIcon, QPixmap
+
+    # Instalada en el sistema, el icono ya existe como SVG: se usa ese, que
+    # es el mismo dibujo y no gasta nada en generarlo.
+    for ruta in (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "iris.svg"),
+        "/usr/share/iris/iris.svg",
+        "/usr/share/icons/hicolor/scalable/apps/iris.svg",
+    ):
+        if os.path.exists(ruta):
+            desde_archivo = QIcon(ruta)
+            if not desde_archivo.isNull():
+                return desde_archivo
 
     icono = QIcon()
     for lado in lados:
@@ -162,3 +176,44 @@ def icono_app(lados=(16, 24, 32, 48, 64, 128, 256)):
         p.end()
         icono.addPixmap(pm)
     return icono
+
+
+def exportar_svg(destino, lado=256):
+    """Escribe el icono como SVG, dibujado por el mismo codigo que la app.
+
+    Un paquete del sistema no puede depender de que Qt dibuje el icono al
+    instalar, asi que el SVG va en el repo. Generarlo desde aqui garantiza
+    que sea el mismo ojo del boton y no un dibujo aparte que se despiste.
+    """
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtSvg import QSvgGenerator
+
+    generador = QSvgGenerator()
+    generador.setFileName(destino)
+    generador.setSize(QSize(lado, lado))
+    generador.setViewBox(QRectF(0, 0, lado, lado))
+    generador.setTitle("Iris")
+    generador.setDescription("Icono de Iris, la camara")
+
+    p = QPainter()
+    p.begin(generador)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.scale(lado / 100.0, lado / 100.0)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(32, 32, 34))
+    p.drawRoundedRect(QRectF(2, 2, 96, 96), 22, 22)
+    p.translate(11, 11)
+    p.scale(0.78, 0.78)
+    ojo(p, QColor(255, 255, 255))
+    p.end()
+    return destino
+
+
+if __name__ == "__main__":
+    import sys
+
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    salida = sys.argv[1] if len(sys.argv) > 1 else "iris.svg"
+    print("escrito:", exportar_svg(salida))

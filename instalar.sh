@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # Deja Iris en el menú del escritorio y el comando `iris` en la terminal.
 # Sin sudo: todo va dentro de ~/.local, que es donde el escritorio busca.
+#
+# Usa los mismos archivos que el paquete RPM (iris.desktop, iris.svg) para
+# que no haya dos versiones de lo mismo que se despisten con el tiempo.
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$HOME/.local/bin"
 APPS="$HOME/.local/share/applications"
 ICONOS="$HOME/.local/share/icons/hicolor"
-LADOS=(16 24 32 48 64 128 256)
 
 quitar() {
-    rm -f "$BIN/iris" "$APPS/iris.desktop"
-    for lado in "${LADOS[@]}"; do
-        rm -f "$ICONOS/${lado}x${lado}/apps/iris.png"
-    done
+    rm -f "$BIN/iris" "$APPS/iris.desktop" "$ICONOS/scalable/apps/iris.svg"
     update-desktop-database "$APPS" 2>/dev/null || true
     gtk-update-icon-cache -f -t "$ICONOS" 2>/dev/null || true
     echo "Iris desinstalada. Tus fotos y vídeos siguen donde estaban."
@@ -29,7 +28,7 @@ python3 -c "import PyQt6.QtWidgets" 2>/dev/null || {
 }
 command -v ffmpeg >/dev/null || echo "Aviso: sin ffmpeg no vas a poder grabar vídeo."
 
-mkdir -p "$BIN" "$APPS"
+mkdir -p "$BIN" "$APPS" "$ICONOS/scalable/apps"
 
 cat > "$BIN/iris" <<EOF
 #!/usr/bin/env bash
@@ -37,36 +36,9 @@ exec python3 "$RAIZ/iris.py" "\$@"
 EOF
 chmod +x "$BIN/iris" "$RAIZ/iris.py"
 
-cat > "$APPS/iris.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Iris
-GenericName=Cámara
-Comment=Verte, sacarte fotos y grabar vídeo con la webcam
-Exec=$BIN/iris
-Icon=iris
-Terminal=false
-Categories=AudioVideo;Video;
-Keywords=camara;cámara;webcam;foto;fotos;video;selfie;iris;
-StartupNotify=true
-EOF
-
-# El icono se dibuja en vez de venir como archivo: así no hay PNG binarios
-# en el repo y sale nítido en cualquier tamaño que pida el escritorio.
-QT_QPA_PLATFORM=offscreen python3 - "$RAIZ" "$ICONOS" "${LADOS[@]}" <<'EOF'
-import os, sys
-sys.path.insert(0, sys.argv[1])
-from PyQt6.QtWidgets import QApplication
-import iconos
-
-app = QApplication([])
-icono = iconos.icono_app()
-base = sys.argv[2]
-for lado in (int(v) for v in sys.argv[3:]):
-    destino = f"{base}/{lado}x{lado}/apps"
-    os.makedirs(destino, exist_ok=True)
-    icono.pixmap(lado, lado).save(f"{destino}/iris.png")
-EOF
+# Al .desktop solo hay que ponerle la ruta real del lanzador.
+sed "s|^Exec=iris$|Exec=$BIN/iris|" "$RAIZ/iris.desktop" > "$APPS/iris.desktop"
+install -m 0644 "$RAIZ/iris.svg" "$ICONOS/scalable/apps/iris.svg"
 
 update-desktop-database "$APPS" 2>/dev/null || true
 gtk-update-icon-cache -f -t "$ICONOS" 2>/dev/null || true

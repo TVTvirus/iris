@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Iris
+GenericName=Camera
+GenericName[es]=Cámara
+Comment=See yourself, take photos and record video with your webcam
+Comment[es]=Verte, sacarte fotos y grabar vídeo con la webcam
+Exec=iris
+Icon=iris
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=camera;webcam;photo;video;selfie;iris;
+Keywords[es]=camara;cámara;webcam;foto;fotos;video;vídeo;selfie;iris;
+StartupNotify=true
+StartupWMClass=iris
