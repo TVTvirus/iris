@@ -123,6 +123,21 @@ cd ~/Documentos/iris && ./instalar.sh
 Eso deja el lanzador en el menú del escritorio y el comando `iris` en la
 terminal. Para sacarlo, `./instalar.sh --quitar`.
 
+## Armar el RPM
+
+El archivo spec está en el repo, así que el paquete sale con tres órdenes:
+
+```bash
+rpmdev-setuptree
+spectool -g -R iris.spec          # baja el tarball de la etiqueta publicada
+rpmbuild -ba iris.spec
+```
+
+Eso deja un `iris-*.noarch.rpm` instalable en `~/rpmbuild/RPMS/noarch/` y un
+paquete de fuentes en `~/rpmbuild/SRPMS/`, que es lo que se le da a COPR.
+Hacen falta `rpm-build`, `rpmdevtools`, `desktop-file-utils` y `python3-devel`
+(este último solo por los macros de Python: aquí no se compila nada).
+
 ## Estado
 
 Funciona y se usa a diario. Lo que falta:

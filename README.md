@@ -127,6 +127,21 @@ cd ~/Documents/iris && ./instalar.sh
 That puts the launcher in your desktop menu and the `iris` command in your
 terminal. To remove it, `./instalar.sh --quitar`.
 
+## Building an RPM
+
+The spec file is in the repo, so a package is three commands away:
+
+```bash
+rpmdev-setuptree
+spectool -g -R iris.spec          # fetches the tarball from the release tag
+rpmbuild -ba iris.spec
+```
+
+That leaves an installable `iris-*.noarch.rpm` in `~/rpmbuild/RPMS/noarch/`
+and a source package in `~/rpmbuild/SRPMS/`, which is what a COPR build takes.
+It needs `rpm-build`, `rpmdevtools`, `desktop-file-utils` and `python3-devel`
+(only for the Python macros: nothing here gets compiled).
+
 ## Status
 
 It works and gets daily use. What's missing:
